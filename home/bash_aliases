@@ -1,0 +1,93 @@
+# Scripts directory
+export PATH="/scripts:$PATH"
+
+# Composer (allow running as root, stable global home across PHP versions)
+export COMPOSER_ALLOW_SUPERUSER=1
+export COMPOSER_HOME="$HOME/.composer"
+export PATH="$COMPOSER_HOME/vendor/bin:$PATH"
+
+# uv (installed to ~/.local/bin)
+export PATH="$HOME/.local/bin:$PATH"
+
+# PostgreSQL aliases & helpers
+alias pg='sudo -u postgres psql'
+alias pgls='sudo -u postgres psql -l'
+alias pgstatus='systemctl status postgresql --no-pager'
+alias pgstart='sudo systemctl start postgresql'
+alias pgstop='sudo systemctl stop postgresql'
+alias pgrestart='sudo systemctl restart postgresql'
+alias pgreload='sudo systemctl reload postgresql'
+alias pglog='sudo tail -f /var/log/postgresql/postgresql-16-main.log'
+alias pgconf='cd /etc/postgresql/16/main'
+
+# Create a new project role + database.
+# Usage: pgnewdb <name> [password]
+# If password omitted, you'll be prompted (hidden input).
+pgnewdb() {
+    local name="$1"
+    local pass="$2"
+    if [ -z "$name" ]; then
+        echo "Usage: pgnewdb <name> [password]" >&2
+        return 1
+    fi
+    if ! [[ "$name" =~ ^[a-z_][a-z0-9_]*$ ]]; then
+        echo "Error: name must be lowercase letters, digits, underscores (and start with a letter/underscore)" >&2
+        return 1
+    fi
+    if [ -z "$pass" ]; then
+        read -rsp "Password for role '$name': " pass; echo
+        [ -z "$pass" ] && { echo "Aborted: empty password" >&2; return 1; }
+    fi
+    sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL
+CREATE ROLE "$name" WITH LOGIN PASSWORD '$(printf "%s" "$pass" | sed "s/'/''/g")';
+CREATE DATABASE "$name" OWNER "$name";
+GRANT ALL PRIVILEGES ON DATABASE "$name" TO "$name";
+SQL
+    if [ $? -eq 0 ]; then
+        echo "Created role + database: $name"
+        echo "Connect: postgresql://$name:<password>@127.0.0.1:5432/$name"
+    fi
+}
+
+# Drop a project role + database (with confirmation).
+# Usage: pgdropdb <name>
+pgdropdb() {
+    local name="$1"
+    if [ -z "$name" ]; then
+        echo "Usage: pgdropdb <name>" >&2
+        return 1
+    fi
+    read -rp "Really drop database AND role '$name'? Type the name to confirm: " confirm
+    if [ "$confirm" != "$name" ]; then
+        echo "Aborted."
+        return 1
+    fi
+    sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL
+DROP DATABASE IF EXISTS "$name";
+DROP ROLE IF EXISTS "$name";
+SQL
+}
+
+# Connect to a specific project database as its owner.
+# Usage: pgc <db>
+pgc() {
+    local db="$1"
+    if [ -z "$db" ]; then
+        echo "Usage: pgc <db>" >&2
+        return 1
+    fi
+    sudo -u postgres psql -d "$db"
+}
+
+# Quick backup of a database to a timestamped .sql.gz file.
+# Usage: pgdump <db> [output_dir]
+pgdump() {
+    local db="$1"
+    local dir="${2:-.}"
+    if [ -z "$db" ]; then
+        echo "Usage: pgdump <db> [output_dir]" >&2
+        return 1
+    fi
+    local out="$dir/${db}-$(date +%Y%m%d-%H%M%S).sql.gz"
+    sudo -u postgres pg_dump "$db" | gzip > "$out" && echo "Wrote $out"
+}

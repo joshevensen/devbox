@@ -1,0 +1,29 @@
+# Secrets & credentials
+*.env
+*.env.*
+.env
+secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+
+# SSH
+home/.ssh/
+
+# Claude Code runtime data (not config)
+claude/projects/
+claude/sessions/
+claude/history.jsonl
+claude/.credentials.json
+claude/backups/
+claude/cache/
+claude/file-history/
+claude/shell-snapshots/
+claude/session-env/
+claude/.last-cleanup
+claude/mcp-needs-auth-cache.json
+
+# OS
+.DS_Store
+Thumbs.db
