@@ -20,7 +20,7 @@ Version: v2.11.2 with `dns.providers.cloudflare`
 | `/etc/caddy/cloudflare.env` | `CF_API_TOKEN=…` (mode 600, owned by caddy) |
 | `/var/lib/caddy/` | Caddy home: ACME certs, autosave config |
 | `/var/log/caddy/` | Log dir (Caddy uses journald by default) |
-| `~/.devbox/caddy/sites.d/` | Per-branch site snippets (imported when `devup` activates) |
+| `~/devbox/.caddy/sites.d/` | Per-branch site snippets (imported when `devup` activates) |
 
 ## Service management
 
@@ -43,14 +43,14 @@ Both use DNS-01 via Cloudflare for TLS (required for wildcard certs).
 Once `devup` is working, the import directive at the bottom is uncommented:
 
 ```
-import /root/.devbox/caddy/sites.d/*.caddy
+import /root/devbox/.caddy/sites.d/*.caddy
 ```
 
 Each `.caddy` file in that dir routes `<branch>.<project>.joshevensen.com` to the appropriate local port.
 
 ## Adding a site manually
 
-Create `/root/.devbox/caddy/sites.d/<name>.caddy`:
+Create `~/devbox/.caddy/sites.d/<name>.caddy`:
 
 ```
 handle @<project>-<branch> {
@@ -71,7 +71,7 @@ journalctl -u caddy | grep -i "certif"
 ## Token location
 
 The Cloudflare API token is stored in two places:
-- `~/.devbox/secrets/cloudflare.env` — source of truth (`CLOUDFLARE_API_TOKEN=…`)
+- `~/devbox/.secrets/cloudflare.env` — source of truth (`CLOUDFLARE_API_TOKEN=…`)
 - `/etc/caddy/cloudflare.env` — Caddy's copy (`CF_API_TOKEN=…`), loaded by systemd `EnvironmentFile`
 
 If you rotate the token, update both files and `systemctl restart caddy`.

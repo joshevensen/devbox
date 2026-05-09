@@ -64,8 +64,8 @@ Probably also a top-level `*.joshevensen.com` for ad-hoc or non-branch subdomain
 | 2 | Reverse proxy | **Caddy** with the Cloudflare DNS module for wildcard TLS via DNS-01 |
 | 3 | Branch → env mapping | **systemd unit per branch** + Caddy snippets per `<branch>.<project>` |
 | 4 | Repo layout | **Git worktrees with a bare repo** (`~/repos/<project>/.bare`, worktrees per branch) |
-| 5 | Service template | **One systemd template** `devbox@.service` + per-project `.devbox/start.sh` in each repo |
-| 6 | Secrets | **Two-tier:** `~/.devbox/secrets/<project>.env` shared, per-branch values computed at `devup` time |
+| 5 | Service template | **One systemd template** `devbox@.service` + stack script from `~/devbox/scripts/stacks/` (repos are devbox-unaware) |
+| 6 | Secrets | **Two-tier:** `~/devbox/.secrets/<project>.env` shared, per-branch values computed at `devup` time |
 
 ### Resulting layout
 
@@ -75,22 +75,31 @@ Probably also a top-level `*.joshevensen.com` for ad-hoc or non-branch subdomain
     fibermade/
       .bare/                   # bare clone, shared object storage
       .git                     # → .bare
-      main/                    # worktree
-        .devbox/start.sh       # boot logic (committed)
+      main/                    # worktree (no devbox artifacts)
       task-001/                # worktree
-  .devbox/
-    secrets/
+  devbox/
+    repos/
+      fibermade.yaml           # stack: laravel-inertia
+    scripts/
+      stacks/
+        laravel.sh
+        laravel-inertia.sh
+        phoenix.sh
+        python-uvicorn.sh
+    .secrets/
       fibermade.env            # shared project secrets, mode 0600
-    caddy/
+    .caddy/
       sites.d/                 # one file per running branch
         fibermade-task-001.caddy
         fibermade-main.caddy
-    state/
+    .state/
       ports.json               # port allocation registry
   docs/
     overview.md                # this file
     database.md
-    (future: caddy.md, devup.md, etc.)
+    stacks.md
+    caddy.md
+    devup.md
 ```
 
 ### Request flow
@@ -117,7 +126,7 @@ Browser → task-001.fibermade.joshevensen.com (port 443)
 
 1. **Cloudflare DNS migration** — set up Cloudflare account, recreate zone, switch nameservers at name.com.
 2. **Caddy install** — build Caddy with the Cloudflare DNS module; minimal config serving a single wildcard test page.
-3. ✅ **systemd template + state dirs** — `devbox@.service` written, `~/.devbox/{secrets,caddy/sites.d,state/env,state/cwd}` created, `ports.json` initialized. See [`start-sh.md`](start-sh.md) for the `.devbox/start.sh` contract.
+3. ✅ **systemd template + state dirs** — `devbox@.service` written, `~/devbox/{.secrets,.caddy/sites.d,.state/env,.state/cwd}` created, `ports.json` initialized. See [`stacks.md`](stacks.md) for the stack script contract.
 4. ✅ **`devup` / `devdown` / `devls`** — scripts in `/usr/local/bin/`. See [`devup.md`](devup.md).
 5. **Bootstrap one project end-to-end** — pick a real repo, write its `.devbox/start.sh`, spin up `main` and a feature branch, verify the URLs and Postgres wiring work.
 6. **Document each piece** — `caddy.md`, `devup.md`, `start-sh.md` as we go.

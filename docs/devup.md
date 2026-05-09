@@ -14,7 +14,7 @@ devinit fibermade git@github.com:you/fibermade.git
 
 After this:
 1. Run `pgnewdb fibermade` to create the shared Postgres role and primary DB.
-2. Edit `~/.devbox/secrets/fibermade.env` to add `DB_USER`, `DB_PASS`, and any other project-wide env vars. This file is appended verbatim to every branch env file, so anything in it is available to `start.sh`.
+2. Edit `~/devbox/.secrets/fibermade.env` to add `DB_USER`, `DB_PASS`, and any other project-wide env vars. This file is appended verbatim to every branch env file, so anything in it is available to `start.sh`.
 3. Add `.devbox/start.sh` (executable) to the project repo — see `start-sh.md` for the contract.
 
 ### `devup <project> <branch> [<git-ref>]`
@@ -30,9 +30,9 @@ Steps it performs:
 1. Allocates a port (40000+, never reused after teardown).
 2. Adds a git worktree at `~/repos/<project>/<branch>`.
 3. Creates a per-branch Postgres DB named `<project>_<branch>` (hyphens → underscores), owned by the project role.
-4. Writes `~/.devbox/state/env/<project>-<branch>.env` with `PORT`, `APP_URL`, `DATABASE_URL`, `REDIS_URL`, `WORKING_DIR_OVERRIDE`, and everything from `~/.devbox/secrets/<project>.env`.
-5. Symlinks `~/.devbox/state/cwd/<project>-<branch>` → worktree (satisfies `WorkingDirectory=` in the systemd template).
-6. Writes `~/.devbox/caddy/sites.d/<project>-<branch>.caddy` and reloads Caddy.
+4. Writes `~/devbox/.state/env/<project>-<branch>.env` with `PORT`, `APP_URL`, `DATABASE_URL`, `REDIS_URL`, `WORKING_DIR_OVERRIDE`, and everything from `~/devbox/.secrets/<project>.env`.
+5. Symlinks `~/devbox/.state/cwd/<project>-<branch>` → worktree (satisfies `WorkingDirectory=` in the systemd template).
+6. Writes `~/devbox/.caddy/sites.d/<project>-<branch>.caddy` and reloads Caddy.
 7. Enables and starts `devbox@<project>-<branch>.service`.
 
 If any step fails, rollback runs in reverse order.
@@ -72,7 +72,7 @@ Equivalent to: `journalctl -u devbox@fibermade-task-001.service -n 50 -f`
 
 ## How port allocation works
 
-State lives in `~/.devbox/state/ports.json`:
+State lives in `~/devbox/.state/ports.json`:
 
 ```json
 {
@@ -90,7 +90,7 @@ Locking: `flock` on `ports.json.lock`. Fine for single-user box; concurrent `dev
 
 ---
 
-## Secrets file format (`~/.devbox/secrets/<project>.env`)
+## Secrets file format (`~/devbox/.secrets/<project>.env`)
 
 Plain `KEY=VALUE` lines, no export needed. This file is appended to each branch's env file, so every var in it is visible to `start.sh`.
 
@@ -115,8 +115,8 @@ Redis DB index = `(port - 40000) % 16`. With 16 Redis databases and ports starti
 If `devup` dies partway and rollback also fails:
 
 1. **Systemd:** `systemctl disable --now devbox@<instance>.service`
-2. **Caddy:** `rm ~/.devbox/caddy/sites.d/<instance>.caddy && systemctl reload caddy`
-3. **State files:** `rm ~/.devbox/state/env/<instance>.env ~/.devbox/state/cwd/<instance>`
+2. **Caddy:** `rm ~/devbox/.caddy/sites.d/<instance>.caddy && systemctl reload caddy`
+3. **State files:** `rm ~/devbox/.state/env/<instance>.env ~/devbox/.state/cwd/<instance>`
 4. **DB:** `sudo -u postgres psql -c "DROP DATABASE IF EXISTS \"<db_name>\";"`
 5. **Worktree:** `git -C ~/repos/<project>/.bare worktree remove --force ../<branch>`
 6. **ports.json:** manually edit to remove the instance from `allocations`.

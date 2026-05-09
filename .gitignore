@@ -1,8 +1,13 @@
+# Runtime data (gitignored but lives in this repo)
+.secrets/
+.caddy/
+.state/
+.session.md
+
 # Secrets & credentials
 *.env
 *.env.*
 .env
-secrets/
 *.key
 *.pem
 *.p12

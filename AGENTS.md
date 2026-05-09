@@ -1,6 +1,12 @@
-# Claude Code context for this server
+# Agent context for this server
 
 This is **not a code project** — it's the user's remote devbox. All real coding happens inside repos under `~/repos/<project>/`. When invoked at `/root`, you're in admin/setup mode for the server itself.
+
+## Behavior rules
+
+- **If not confident, say so.** Do not guess or present uncertain information as fact. Prefer "I don't know" or "I'm not sure" over a plausible-sounding but unreliable answer.
+- **If a task can't be completed, stop and ask.** If a required tool, service, or MCP server is unavailable, state what is missing and ask for guidance. Do not attempt the task through an alternative method unless explicitly told to.
+- **Don't improvise scope.** Only do what was asked. Don't refactor surrounding code, add features, or make unrelated improvements unless explicitly requested.
 
 ## Where things live
 
@@ -8,15 +14,19 @@ This is **not a code project** — it's the user's remote devbox. All real codin
 |---|---|
 | `~/repos/` | All project repositories. `cd` into one for project work. |
 | `~/devbox/` | This repo. Config, docs, skills, and shell setup. |
+| `~/devbox/AGENTS.md` | This file. Symlinked from `~/CLAUDE.md` and `~/.claude/CLAUDE.md`. |
 | `~/devbox/docs/` | Server-wide reference docs. **Read these before infrastructure work.** |
 | `~/devbox/docs/overview.md` | Devbox plan: access pattern, domain strategy, TBD decisions. |
 | `~/devbox/docs/caddy.md` | Caddy install, config paths, service management, TLS, adding sites. |
 | `~/devbox/docs/database.md` | PostgreSQL 16 reference + helper aliases/functions. |
 | `~/devbox/docs/runtimes.md` | Languages (asdf-managed) + CLIs (doctl/stripe/shopify/forge/laravel/uv/mosh/redis). |
-| `~/devbox/skills/` | Claude Code + agent skills. Symlinked from `~/.claude/skills` and `~/.agents/skills`. |
+| `~/devbox/docs/stacks.md` | Stack script contract + available stacks + how to add a new one. |
+| `~/devbox/repos/` | Per-repo devbox config (`<name>.yaml`). One file per registered repo. |
+| `~/devbox/scripts/stacks/` | Stack startup scripts. One script per stack type (laravel, phoenix, etc.). |
+| `~/devbox/skills/` | Claude Code + agent skills. Symlinked from `~/.claude/skills`. |
+| `~/devbox/rules/` | Scoped rule files. Symlinked from `~/.claude/rules/`. |
 | `~/devbox/scripts/` | Server-wide helper scripts. |
 | `~/tasks/` | Outstanding work files. Open `~/tasks/README.md` for the status board. |
-| `~/CLAUDE.md` | Symlink to `~/devbox/CLAUDE.md` (this file). |
 | `~/.bash_aliases` | Symlink to `~/devbox/home/bash_aliases`. |
 | `~/.claude/projects/-root/memory/` | Cross-session memory. |
 

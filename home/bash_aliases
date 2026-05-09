@@ -1,6 +1,10 @@
 # Scripts directory
 export PATH="/scripts:$PATH"
 
+# Claude Code in devbox context
+alias dev='cd ~/devbox && claude'
+alias yolo='cd ~/devbox && claude --dangerously-skip-permissions'
+
 # Composer (allow running as root, stable global home across PHP versions)
 export COMPOSER_ALLOW_SUPERUSER=1
 export COMPOSER_HOME="$HOME/.composer"
