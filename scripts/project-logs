@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    echo "Usage: project-logs <project> <branch>" >&2
+    exit 1
+}
+[[ $# -lt 2 ]] && usage
+
+INSTANCE="${1}-${2}"
+exec journalctl -u "devbox@${INSTANCE}.service" -n 50 -f

@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DEVBOX_DIR="/root/devbox"
+REPOS_DIR="/root/repos"
+DOMAIN="joshevensen.com"
+
+usage() {
+    echo "Usage: project-up <project> <branch> [<git-ref>]" >&2
+    exit 1
+}
+[[ $# -lt 2 ]] && usage
+
+PROJECT="$1"
+BRANCH="$2"
+GIT_REF="${3:-}"
+INSTANCE="${PROJECT}-${BRANCH}"
+
+name_re='^[a-z][a-z0-9-]*$'
+[[ "$PROJECT" =~ $name_re ]] || { echo "Error: project '$PROJECT' must match ^[a-z][a-z0-9-]*$" >&2; exit 1; }
+[[ "$BRANCH"  =~ $name_re ]] || { echo "Error: branch '$BRANCH' must match ^[a-z][a-z0-9-]*$" >&2; exit 1; }
+
+BARE_DIR="$REPOS_DIR/$PROJECT/.bare"
+[[ -d "$BARE_DIR" ]] || { echo "Error: $BARE_DIR not found. Run: project-init <git-url> $PROJECT" >&2; exit 1; }
+
+# Read stack from repo config
+REPO_CONFIG="$DEVBOX_DIR/repos/$PROJECT.yaml"
+[[ -f "$REPO_CONFIG" ]] || { echo "Error: $PROJECT is not registered (no $REPO_CONFIG). Run /repo-add first." >&2; exit 1; }
+STACK=$(grep -m1 '^stack:' "$REPO_CONFIG" | awk '{print $2}')
+[[ -n "$STACK" ]] || { echo "Error: no 'stack:' field in $REPO_CONFIG" >&2; exit 1; }
+STACK_SCRIPT="$DEVBOX_DIR/scripts/stacks/$STACK.sh"
+[[ -f "$STACK_SCRIPT" ]] || { echo "Error: stack script not found: $STACK_SCRIPT" >&2; exit 1; }
+
+ENV_FILE="$DEVBOX_DIR/.state/env/$INSTANCE.env"
+[[ ! -f "$ENV_FILE" ]] || { echo "Error: $INSTANCE is already up. Run: project-down $PROJECT $BRANCH" >&2; exit 1; }
+
+# --- Rollback state ---
+RB_WORKTREE=false
+RB_DB=false
+RB_ENV=false
+RB_CWD=false
+RB_CADDY=false
+RB_SYSTEMD=false
+DB_NAME=""
+PORT=""
+
+cleanup() {
+    local rc=$?
+    [[ $rc -eq 0 ]] && return
+    echo "" >&2
+    echo "project-up failed (exit $rc) — rolling back..." >&2
+    $RB_SYSTEMD  && systemctl disable --now "devbox@${INSTANCE}.service" 2>/dev/null || true
+    $RB_CADDY    && { rm -f "$DEVBOX_DIR/.caddy/sites.d/$INSTANCE.caddy"; systemctl reload caddy 2>/dev/null || true; }
+    $RB_CWD      && rm -f "$DEVBOX_DIR/.state/cwd/$INSTANCE" || true
+    $RB_ENV      && rm -f "$ENV_FILE" || true
+    if $RB_DB && [[ -n "$DB_NAME" ]]; then
+        sudo -u postgres psql -q -c "DROP DATABASE IF EXISTS \"$DB_NAME\";" 2>/dev/null || true
+    fi
+    $RB_WORKTREE && git -C "$BARE_DIR" worktree remove --force "../$BRANCH" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+echo "Starting project-up for $INSTANCE..."
+
+# 1. Allocate port atomically via flock
+PORTS_FILE="$DEVBOX_DIR/.state/ports.json"
+PORTS_TMP="$PORTS_FILE.tmp.$$"
+{
+    flock -x 9
+    PORT=$(python3 - "$PORTS_FILE" "$PORTS_TMP" "$INSTANCE" <<'PYEOF'
+import json, sys
+ports_file, ports_tmp, instance = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(ports_file) as f:
+        d = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    d = {"next_port": 40000, "allocations": {}}
+port = d["next_port"]
+d["next_port"] = port + 1
+d["allocations"][instance] = port
+with open(ports_tmp, "w") as f:
+    json.dump(d, f, indent=2)
+    f.write("\n")
+print(port)
+PYEOF
+    )
+    mv "$PORTS_TMP" "$PORTS_FILE"
+} 9>"$PORTS_FILE.lock"
+echo "  Allocated port: $PORT"
+
+# 2. Add worktree
+WORKTREE="$REPOS_DIR/$PROJECT/$BRANCH"
+if [[ -n "$GIT_REF" ]]; then
+    git -C "$BARE_DIR" worktree add "../$BRANCH" "$GIT_REF"
+else
+    git -C "$BARE_DIR" worktree add "../$BRANCH" "$BRANCH" 2>/dev/null || \
+    git -C "$BARE_DIR" worktree add --track -b "$BRANCH" "../$BRANCH" "origin/$BRANCH"
+fi
+RB_WORKTREE=true
+echo "  Worktree: $WORKTREE"
+
+# 3. Create per-branch Postgres DB
+DB_NAME="${PROJECT}_${BRANCH//-/_}"
+SECRETS_FILE="$DEVBOX_DIR/.secrets/$PROJECT.env"
+DB_USER="$PROJECT"
+DB_PASS=""
+if [[ -f "$SECRETS_FILE" ]]; then
+    eval "$(grep -E '^(DB_USER|DB_PASS)=' "$SECRETS_FILE" 2>/dev/null || true)"
+fi
+
+if sudo -u postgres psql -Atc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" 2>/dev/null | grep -q 1; then
+    echo "  DB $DB_NAME already exists — skipping creation"
+else
+    sudo -u postgres psql -q -c "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\";"
+    RB_DB=true
+    echo "  Created DB: $DB_NAME"
+fi
+
+# 4. Generate env file
+REDIS_DB=$(( (PORT - 40000) % 16 ))
+if [[ -n "$DB_PASS" ]]; then
+    DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@127.0.0.1:5432/${DB_NAME}"
+else
+    DATABASE_URL="postgresql://${DB_USER}@127.0.0.1:5432/${DB_NAME}"
+fi
+{
+    echo "PORT=$PORT"
+    echo "APP_URL=https://${BRANCH}.${PROJECT}.${DOMAIN}"
+    echo "APP_ENV=devbox"
+    echo "WORKING_DIR_OVERRIDE=$WORKTREE"
+    echo "STACK_SCRIPT=$STACK_SCRIPT"
+    echo "DATABASE_URL=$DATABASE_URL"
+    echo "REDIS_URL=redis://127.0.0.1:6379/$REDIS_DB"
+    if [[ -f "$SECRETS_FILE" ]]; then
+        echo ""
+        cat "$SECRETS_FILE"
+    fi
+} > "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+RB_ENV=true
+echo "  Env file: $ENV_FILE"
+
+# 5. Symlink cwd (systemd WorkingDirectory target)
+ln -sfn "$WORKTREE" "$DEVBOX_DIR/.state/cwd/$INSTANCE"
+RB_CWD=true
+
+# 6. Caddy snippet
+cat > "$DEVBOX_DIR/.caddy/sites.d/$INSTANCE.caddy" <<CADDY
+${BRANCH}.${PROJECT}.${DOMAIN} {
+  tls {
+    dns cloudflare {env.CF_API_TOKEN}
+  }
+  reverse_proxy 127.0.0.1:${PORT}
+}
+CADDY
+RB_CADDY=true
+
+if systemctl is-active --quiet caddy 2>/dev/null; then
+    systemctl reload caddy
+    echo "  Caddy reloaded"
+else
+    echo "  Warning: Caddy not running — snippet written, will load when Caddy starts" >&2
+fi
+
+# 7. Enable + start systemd unit
+systemctl enable --now "devbox@${INSTANCE}.service"
+RB_SYSTEMD=true
+echo "  Started: devbox@${INSTANCE}.service"
+
+echo ""
+echo "  ${INSTANCE} is up"
+echo "  URL:  https://${BRANCH}.${PROJECT}.${DOMAIN}"
+echo "  Port: $PORT"
+echo "  DB:   $DB_NAME"
+echo ""
+echo "  Tailing logs for 10s — Ctrl-C to stop early, or wait..."
+echo ""
+sleep 1
+timeout 10s journalctl -u "devbox@${INSTANCE}.service" -f --since now || true
+echo ""
+
+STATUS=$(systemctl is-active "devbox@${INSTANCE}.service" 2>/dev/null || echo "unknown")
+echo "  Service status: $STATUS"
+if [[ "$STATUS" != "active" ]]; then
+    echo "  Warning: service is not active — check logs: project-logs $PROJECT $BRANCH" >&2
+fi
+echo "  For live logs: project-logs $PROJECT $BRANCH"
+echo ""

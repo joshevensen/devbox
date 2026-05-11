@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DEVBOX_DIR="/root/devbox"
+REPOS_DIR="/root/repos"
+
+usage() {
+    echo "Usage: project-down <project> <branch> [--force]" >&2
+    echo "  --force  skip DB drop confirmation" >&2
+    exit 1
+}
+[[ $# -lt 2 ]] && usage
+
+PROJECT="$1"
+BRANCH="$2"
+FORCE=false
+[[ "${3:-}" == "--force" ]] && FORCE=true
+INSTANCE="${PROJECT}-${BRANCH}"
+
+ENV_FILE="$DEVBOX_DIR/.state/env/$INSTANCE.env"
+[[ -f "$ENV_FILE" ]] || { echo "Error: $INSTANCE is not up (no env file found)." >&2; exit 1; }
+
+echo "Tearing down $INSTANCE..."
+
+# 1. Stop + disable systemd unit
+if systemctl is-active --quiet "devbox@${INSTANCE}.service" 2>/dev/null || \
+   systemctl is-enabled --quiet "devbox@${INSTANCE}.service" 2>/dev/null; then
+    systemctl disable --now "devbox@${INSTANCE}.service" 2>/dev/null || true
+    echo "  Stopped: devbox@${INSTANCE}.service"
+else
+    echo "  Unit was not running"
+fi
+
+# 2. Remove Caddy snippet + reload
+CADDY_FILE="$DEVBOX_DIR/.caddy/sites.d/$INSTANCE.caddy"
+if [[ -f "$CADDY_FILE" ]]; then
+    rm -f "$CADDY_FILE"
+    if systemctl is-active --quiet caddy 2>/dev/null; then
+        systemctl reload caddy
+        echo "  Caddy reloaded"
+    else
+        echo "  Caddy snippet removed (Caddy not running)"
+    fi
+fi
+
+# 3. Remove env file and cwd symlink
+rm -f "$ENV_FILE"
+rm -f "$DEVBOX_DIR/.state/cwd/$INSTANCE"
+echo "  Cleaned state files"
+
+# 4. Drop Postgres DB
+DB_NAME="${PROJECT}_${BRANCH//-/_}"
+if sudo -u postgres psql -Atc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" 2>/dev/null | grep -q 1; then
+    if $FORCE; then
+        sudo -u postgres psql -q -c "DROP DATABASE \"$DB_NAME\";"
+        echo "  Dropped DB: $DB_NAME"
+    else
+        read -r -p "  Drop database '$DB_NAME'? [y/N] " confirm
+        if [[ "$confirm" =~ ^[Yy]$ ]]; then
+            sudo -u postgres psql -q -c "DROP DATABASE \"$DB_NAME\";"
+            echo "  Dropped DB: $DB_NAME"
+        else
+            echo "  DB $DB_NAME kept"
+        fi
+    fi
+else
+    echo "  DB $DB_NAME not found — skipping"
+fi
+
+# 5. Remove worktree
+BARE_DIR="$REPOS_DIR/$PROJECT/.bare"
+WORKTREE="$REPOS_DIR/$PROJECT/$BRANCH"
+if [[ -d "$BARE_DIR" ]]; then
+    if git -C "$BARE_DIR" worktree list | grep -q "$WORKTREE" 2>/dev/null; then
+        git -C "$BARE_DIR" worktree remove --force "../$BRANCH"
+        echo "  Removed worktree: $WORKTREE"
+    else
+        echo "  Worktree not found — skipping"
+    fi
+fi
+
+# 6. Free port in ports.json (remove from allocations; next_port keeps marching)
+PORTS_FILE="$DEVBOX_DIR/.state/ports.json"
+{
+    flock -x 9
+    python3 - "$PORTS_FILE" "$INSTANCE" <<'PYEOF'
+import json, sys
+ports_file, instance = sys.argv[1], sys.argv[2]
+with open(ports_file) as f:
+    d = json.load(f)
+d['allocations'].pop(instance, None)
+with open(ports_file, 'w') as f:
+    json.dump(d, f, indent=2)
+    f.write('\n')
+PYEOF
+} 9>"$PORTS_FILE.lock"
+echo "  Port freed in ports.json"
+
+echo ""
+echo "  ${INSTANCE} is down"
+echo ""

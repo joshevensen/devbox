@@ -1,49 +1,51 @@
-# devup — branch environment tooling
+# project-* — branch environment tooling
 
-These scripts manage the lifecycle of per-branch dev environments on this server. Each environment is a combination of: git worktree + Postgres DB + systemd unit + Caddy snippet.
+These scripts manage the lifecycle of per-branch dev environments on this server. Each environment is a combination of: git worktree + Postgres DB + systemd unit + Caddy snippet. All scripts live in `/scripts/`.
 
 ## Commands
 
-### `devinit <project> <git-url>`
+### `project-init <git-url> [<project>]`
 
-One-time setup for a new project. Creates the bare repo structure and an empty secrets file.
+One-time setup for a new project. Clones the repo as a bare repo and creates an empty secrets file.
 
 ```bash
-devinit fibermade git@github.com:you/fibermade.git
+project-init git@github.com:you/fibermade.git
+project-init git@github.com:you/fibermade.git fibermade   # explicit name
 ```
 
 After this:
-1. Run `pgnewdb fibermade` to create the shared Postgres role and primary DB.
-2. Edit `~/devbox/.secrets/fibermade.env` to add `DB_USER`, `DB_PASS`, and any other project-wide env vars. This file is appended verbatim to every branch env file, so anything in it is available to `start.sh`.
-3. Add `.devbox/start.sh` (executable) to the project repo — see `start-sh.md` for the contract.
+1. Run `/repo-add` in Claude Code to register the project and set its stack.
+2. Run `pgnewdb fibermade` to create the shared Postgres role and primary DB.
+3. Edit `~/devbox/.secrets/fibermade.env` to add `DB_USER`, `DB_PASS`, and any other project-wide env vars. This file is appended verbatim to every branch env file.
 
-### `devup <project> <branch> [<git-ref>]`
+### `project-up <project> <branch> [<git-ref>]`
 
 Spins up a branch environment end-to-end.
 
 ```bash
-devup fibermade task-001
-devup fibermade task-001 origin/feature/task-001   # explicit git ref
+project-up fibermade task-001
+project-up fibermade task-001 origin/feature/task-001   # explicit git ref
 ```
 
 Steps it performs:
-1. Allocates a port (40000+, never reused after teardown).
-2. Adds a git worktree at `~/repos/<project>/<branch>`.
-3. Creates a per-branch Postgres DB named `<project>_<branch>` (hyphens → underscores), owned by the project role.
-4. Writes `~/devbox/.state/env/<project>-<branch>.env` with `PORT`, `APP_URL`, `DATABASE_URL`, `REDIS_URL`, `WORKING_DIR_OVERRIDE`, and everything from `~/devbox/.secrets/<project>.env`.
-5. Symlinks `~/devbox/.state/cwd/<project>-<branch>` → worktree (satisfies `WorkingDirectory=` in the systemd template).
-6. Writes `~/devbox/.caddy/sites.d/<project>-<branch>.caddy` and reloads Caddy.
-7. Enables and starts `devbox@<project>-<branch>.service`.
+1. Reads the stack from `~/devbox/repos/<project>.yaml`.
+2. Allocates a port (40000+, never reused after teardown).
+3. Adds a git worktree at `~/repos/<project>/<branch>`.
+4. Creates a per-branch Postgres DB named `<project>_<branch>` (hyphens → underscores), owned by the project role.
+5. Writes `~/devbox/.state/env/<project>-<branch>.env` with `PORT`, `APP_URL`, `DATABASE_URL`, `REDIS_URL`, `WORKING_DIR_OVERRIDE`, `STACK_SCRIPT`, and everything from `~/devbox/.secrets/<project>.env`.
+6. Symlinks `~/devbox/.state/cwd/<project>-<branch>` → worktree (satisfies `WorkingDirectory=` in the systemd template).
+7. Writes `~/devbox/.caddy/sites.d/<project>-<branch>.caddy` and reloads Caddy.
+8. Enables and starts `devbox@<project>-<branch>.service`.
 
 If any step fails, rollback runs in reverse order.
 
-### `devdown <project> <branch> [--force]`
+### `project-down <project> <branch> [--force]`
 
 Tears down a branch environment. Safe to re-run.
 
 ```bash
-devdown fibermade task-001           # prompts before dropping DB
-devdown fibermade task-001 --force   # skips DB drop confirmation
+project-down fibermade task-001           # prompts before dropping DB
+project-down fibermade task-001 --force   # skips DB drop confirmation
 ```
 
 Steps: stop/disable unit → remove Caddy snippet + reload → remove env file and cwd symlink → drop DB → remove worktree → free port in ports.json.
@@ -58,12 +60,12 @@ Lists all active environments with their URLs, ports, and systemd status.
 devls
 ```
 
-### `devlogs <project> <branch>`
+### `project-logs <project> <branch>`
 
 Tails the journal for a branch env (last 50 lines + follow).
 
 ```bash
-devlogs fibermade task-001
+project-logs fibermade task-001
 ```
 
 Equivalent to: `journalctl -u devbox@fibermade-task-001.service -n 50 -f`

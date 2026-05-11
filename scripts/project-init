@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPOS_DIR="/root/repos"
+DEVBOX_DIR="/root/devbox"
+
+usage() {
+    echo "Usage: project-init <git-url> [<project>]" >&2
+    exit 1
+}
+[[ $# -lt 1 ]] && usage
+
+GIT_URL="$1"
+PROJECT="${2:-}"
+
+if [[ -z "$PROJECT" ]]; then
+    PROJECT=$(basename "$GIT_URL" .git)
+fi
+
+name_re='^[a-z][a-z0-9-]*$'
+[[ "$PROJECT" =~ $name_re ]] || { echo "Error: project name '$PROJECT' must match ^[a-z][a-z0-9-]*$ — pass an explicit name as the second argument" >&2; exit 1; }
+
+PROJECT_DIR="$REPOS_DIR/$PROJECT"
+BARE_DIR="$PROJECT_DIR/.bare"
+
+[[ ! -d "$BARE_DIR" ]] || { echo "Error: $BARE_DIR already exists." >&2; exit 1; }
+
+mkdir -p "$PROJECT_DIR"
+
+echo "Cloning bare repo from $GIT_URL..."
+git clone --bare "$GIT_URL" "$BARE_DIR"
+
+# .git redirect so standard git commands work from project dir
+echo "gitdir: ./.bare" > "$PROJECT_DIR/.git"
+
+# Bare clones don't set up remote tracking refspec by default — fix that
+git -C "$BARE_DIR" config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+git -C "$BARE_DIR" fetch origin --quiet
+echo "  Fetched remote branches"
+
+# Create empty secrets file if it doesn't exist
+SECRETS_FILE="$DEVBOX_DIR/.secrets/$PROJECT.env"
+if [[ ! -f "$SECRETS_FILE" ]]; then
+    touch "$SECRETS_FILE"
+    chmod 600 "$SECRETS_FILE"
+    echo "  Created secrets file: $SECRETS_FILE"
+    echo "  Edit it to add DB_USER, DB_PASS, and other project-wide env vars."
+fi
+
+echo ""
+echo "  Project:  $PROJECT"
+echo "  Bare:     $BARE_DIR"
+echo "  Secrets:  $SECRETS_FILE"
+echo ""
+echo "  Next steps:"
+echo "    1. pgnewdb $PROJECT                  # create Postgres role + primary DB"
+echo "    2. Edit $SECRETS_FILE                # add DB_USER, DB_PASS, etc."
+echo "    3. project-up $PROJECT <branch>      # spin up a branch env"
+echo ""

@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DEVBOX_DIR="/root/devbox"
+ENV_DIR="$DEVBOX_DIR/.state/env"
+
+shopt -s nullglob
+env_files=("$ENV_DIR"/*.env)
+shopt -u nullglob
+
+if [[ ${#env_files[@]} -eq 0 ]]; then
+    echo "No active devbox environments."
+    exit 0
+fi
+
+printf "%-14s  %-18s  %-50s  %-6s  %s\n" "PROJECT" "BRANCH" "URL" "PORT" "STATUS"
+printf "%-14s  %-18s  %-50s  %-6s  %s\n" "-------" "------" "---" "----" "------"
+
+for env_file in "${env_files[@]}"; do
+    instance=$(basename "$env_file" .env)
+
+    app_url=$(grep -m1 '^APP_URL=' "$env_file" 2>/dev/null | cut -d= -f2- || echo "")
+    port=$(grep -m1 '^PORT=' "$env_file" 2>/dev/null | cut -d= -f2- || echo "?")
+
+    # Parse branch and project from https://<branch>.<project>.<domain>
+    hostname="${app_url#https://}"
+    hostname="${hostname%%/*}"
+    branch="${hostname%%.*}"
+    rest="${hostname#*.}"
+    project="${rest%%.*}"
+
+    if systemctl is-active --quiet "devbox@${instance}.service" 2>/dev/null; then
+        status="active"
+    elif systemctl is-failed --quiet "devbox@${instance}.service" 2>/dev/null; then
+        status="failed"
+    else
+        status="inactive"
+    fi
+
+    printf "%-14s  %-18s  %-50s  %-6s  %s\n" "$project" "$branch" "$app_url" "$port" "$status"
+done

@@ -1,5 +1,5 @@
 # Scripts directory
-export PATH="/scripts:$PATH"
+export PATH="$HOME/devbox/scripts:$PATH"
 
 # Claude Code in devbox context
 alias dev='cd ~/devbox && claude'
