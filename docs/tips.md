@@ -153,7 +153,8 @@ Run any skill from a Claude Code session with `/skill-name`. Skills use GitHub I
 | `/work-list` | List all in-progress and review work across projects |
 | `/work-summary` | Show recent activity: in progress, in review, shipped this week |
 | `/prioritize` | Re-order the open task backlog by priority |
+| `/git-ship` | Group pending changes into logical commits, confirm, then commit and push |
 | `/merge-main` | Merge the latest `main` into the current branch |
 | `/discuss` | Open a freeform discussion / brainstorm session |
 | `/view-file <path>` | Display a file in chat with syntax highlighting; supports line ranges (`/view-file path 40-80`) |
-| `/ll` | Quick directory listing |
+| `/view-directory [path]` | Display a file tree for a directory (depth 2) |

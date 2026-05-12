@@ -1,11 +1,11 @@
-# ll
+# view-directory
 
 Display a file tree for a given path.
 
 ## Usage
 
 ```
-/ll [path]
+/view-directory [path]
 ```
 
 - `path` — directory to display (optional, defaults to current working directory)
