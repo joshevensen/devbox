@@ -1,0 +1,21 @@
+[Unit]
+Description=Devbox env: %i
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+# %i is the instance name, e.g. fibermade-task-001 (<project>-<branch>)
+EnvironmentFile=/root/devbox/.state/env/%i.env
+WorkingDirectory=/root/devbox/.state/cwd/%i
+ExecStart=/bin/bash -c 'exec "$STACK_SCRIPT"'
+Restart=on-failure
+RestartSec=2s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=devbox-%i
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

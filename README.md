@@ -34,6 +34,27 @@ See `docs/runtimes.md` for full version list and CLI tools (doctl, Stripe, Shopi
 
 ## Installation
 
+Before you begin, your server needs two tools that must be installed manually:
+
+- **`git`** — to clone this repo
+- **`gh`** (GitHub CLI) — used by every skill that manages tasks, bugs, and PRs; must be authenticated before the skills work
+
+```bash
+# On a fresh Ubuntu server (run as root)
+apt-get update && apt-get install -y git
+
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+  | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] \
+  https://cli.github.com/packages stable main" \
+  > /etc/apt/sources.list.d/github-cli.list
+apt-get update && apt-get install -y gh
+
+gh auth login
+```
+
+`install.sh` handles everything else from there.
+
 ### 1. Clone the repo
 
 ```bash
@@ -46,17 +67,9 @@ git clone git@github.com:joshevensen/devbox.git ~/devbox
 bash ~/devbox/install.sh
 ```
 
-This symlinks `~/.bash_aliases`, `~/CLAUDE.md`, and `~/.claude/skills/` into the right places and sets up the state directories (`~/devbox/.secrets/`, `~/devbox/.state/`, `~/devbox/.caddy/`).
+This bootstraps the full server: installs system packages, all runtimes via asdf (PHP, Node, Python, Erlang, Elixir), uv, doctl, Stripe CLI, GitHub CLI, Caddy with the Cloudflare DNS module, PostgreSQL 16, Redis, Shopify CLI, Composer globals, and the `devbox@.service` systemd template. It also creates symlinks for `~/.bash_aliases`, `~/CLAUDE.md`, and `~/.claude/skills/`.
 
-### 3. Install services
-
-Follow the guides in `docs/` for each service:
-
-- `docs/database.md` — PostgreSQL setup and the `pgnewdb` helper
-- `docs/caddy.md` — Caddy install, Cloudflare DNS module, TLS config
-- `docs/runtimes.md` — asdf, PHP, Python, Node, Erlang/Elixir, and CLI tools
-
-### 4. Register a project
+### 3. Register a project
 
 ```bash
 # One-time: clone the repo as a bare repo and create the secrets file
@@ -72,7 +85,7 @@ pgnewdb myapp
 nano ~/devbox/.secrets/myapp.env
 ```
 
-### 5. Spin up a branch environment
+### 4. Spin up a branch environment
 
 ```bash
 project-up myapp main
@@ -114,6 +127,8 @@ Run any skill from within a Claude Code session:
 | **Utilities** | `repo-setup`, `repo-scaffold`, `tasks-list`, `bugs-list`, `work-list`, `work-summary`, `tasks-next`, `prioritize`, `prioritize-group`, `merge-main` |
 
 Skills use GitHub Issues as the backing store for tasks, bugs, groups, and queues — portable across machines and accessible from any GitHub client.
+
+See `docs/tips.md` for a full skill reference, shell aliases, project commands, and tmux tips.
 
 ### Per-project context
 

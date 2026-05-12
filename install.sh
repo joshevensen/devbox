@@ -8,6 +8,8 @@ DEVBOX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 ASDF_VERSION="0.19.0"
 DOCTL_VERSION="1.158.0"
+GO_VERSION="1.26.3"
+CADDY_VERSION="2.11.2"
 
 info()  { echo "[devbox] $*"; }
 die()   { echo "[devbox] ERROR: $*" >&2; exit 1; }
@@ -83,6 +85,7 @@ while IFS=' ' read -r name version; do
 done < "$HOME/.tool-versions"
 
 asdf reshim
+export PATH="$HOME/.asdf/shims:$PATH"
 
 # ── uv (Python tooling) ───────────────────────────────────────────────────────
 
@@ -110,16 +113,33 @@ if ! command -v stripe &>/dev/null; then
   apt-get update -qq && apt-get install -y -qq stripe
 fi
 
-# ── Caddy ─────────────────────────────────────────────────────────────────────
+# ── Caddy (xcaddy build with Cloudflare DNS module) ───────────────────────────
+# Standard apt Caddy lacks the Cloudflare DNS module required for wildcard TLS.
 
-if ! command -v caddy &>/dev/null; then
-  info "Installing Caddy..."
-  apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https
-  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
-    | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
-    | tee /etc/apt/sources.list.d/caddy-stable.list
-  apt-get update -qq && apt-get install -y -qq caddy
+if ! caddy list-modules 2>/dev/null | grep -q 'dns.providers.cloudflare'; then
+  info "Installing Go ${GO_VERSION} for xcaddy build..."
+  if [[ ! -f /usr/local/go/bin/go ]]; then
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -xz -C /usr/local
+  fi
+  export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
+
+  info "Installing xcaddy..."
+  go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+  info "Building Caddy v${CADDY_VERSION} with Cloudflare DNS module..."
+  CADDY_BUILD_DIR=$(mktemp -d)
+  xcaddy build "v${CADDY_VERSION}" --with github.com/caddy-dns/cloudflare \
+    --output "$CADDY_BUILD_DIR/caddy"
+  install -m 755 "$CADDY_BUILD_DIR/caddy" /usr/local/bin/caddy
+  rm -rf "$CADDY_BUILD_DIR"
+
+  id -u caddy &>/dev/null || useradd -r -M -d /var/lib/caddy -s /usr/sbin/nologin caddy
+  mkdir -p /etc/caddy /var/lib/caddy /var/log/caddy
+  chown -R caddy:caddy /var/lib/caddy /var/log/caddy
+
+  install -m 644 "$DEVBOX_DIR/scripts/caddy.service" /etc/systemd/system/caddy.service
+  systemctl daemon-reload
+  systemctl enable --now caddy
 fi
 
 # ── PostgreSQL 16 ─────────────────────────────────────────────────────────────
@@ -143,6 +163,18 @@ if ! command -v redis-cli &>/dev/null; then
   systemctl enable --now redis-server
 fi
 
+# ── GitHub CLI ───────────────────────────────────────────────────────────────
+
+if ! command -v gh &>/dev/null; then
+  info "Installing GitHub CLI..."
+  curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg
+  echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] \
+    https://cli.github.com/packages stable main" \
+    > /etc/apt/sources.list.d/github-cli.list
+  apt-get update -qq && apt-get install -y -qq gh
+fi
+
 # ── Shopify CLI (npm global) ──────────────────────────────────────────────────
 
 if ! command -v shopify &>/dev/null; then
@@ -158,6 +190,14 @@ export COMPOSER_ALLOW_SUPERUSER=1
 export COMPOSER_HOME="$HOME/.composer"
 composer global require laravel/installer laravel/forge-cli --no-interaction -q
 
+# ── Devbox systemd template ───────────────────────────────────────────────────
+
+info "Installing devbox@.service..."
+install -m 644 "$DEVBOX_DIR/scripts/devbox@.service" /etc/systemd/system/devbox@.service
+systemctl daemon-reload
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 
-info "Done. Reload your shell: source ~/.bashrc"
+info "Done. Reload your shell and authenticate GitHub CLI:"
+info "  source ~/.bashrc"
+info "  gh auth login"

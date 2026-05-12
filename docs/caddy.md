@@ -2,15 +2,37 @@
 
 ## Installation
 
-Built from source using `xcaddy` with the Cloudflare DNS module. Go 1.26.3 installed at `/usr/local/go/` for the build.
+Handled automatically by `install.sh`. Standard apt Caddy lacks the Cloudflare DNS module required for wildcard TLS, so the script builds from source with `xcaddy`.
+
+What the script does:
+
+1. Installs Go to `/usr/local/go/`
+2. Installs `xcaddy` via `go install`
+3. Builds Caddy with `--with github.com/caddy-dns/cloudflare`
+4. Places the binary at `/usr/local/bin/caddy`
+5. Creates the `caddy` system user and `/etc/caddy`, `/var/lib/caddy`, `/var/log/caddy` directories
+6. Installs `scripts/caddy.service` to `/etc/systemd/system/` and enables the service
+
+To reproduce manually (e.g. to upgrade Caddy):
 
 ```bash
-xcaddy build --with github.com/caddy-dns/cloudflare
-mv caddy /usr/local/bin/caddy
+export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
+go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+xcaddy build v2.11.2 --with github.com/caddy-dns/cloudflare --output /usr/local/bin/caddy
+systemctl restart caddy
 ```
 
 Binary: `/usr/local/bin/caddy`  
 Version: v2.11.2 with `dns.providers.cloudflare`
+
+**After install:** add your Cloudflare API token:
+
+```bash
+echo "CF_API_TOKEN=your-token-here" > /etc/caddy/cloudflare.env
+chmod 600 /etc/caddy/cloudflare.env
+chown caddy /etc/caddy/cloudflare.env
+systemctl restart caddy
+```
 
 ## Key paths
 
