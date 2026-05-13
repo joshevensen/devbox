@@ -1,5 +1,5 @@
 {
-  "theme": "dark",
   "model": "sonnet",
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark"
 }

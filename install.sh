@@ -11,10 +11,32 @@ DOCTL_VERSION="1.158.0"
 GO_VERSION="1.26.3"
 CADDY_VERSION="2.11.2"
 
+DEVBOX_USER="dev"
+DEVBOX_HOME="/home/$DEVBOX_USER"
+
 info()  { echo "[devbox] $*"; }
 die()   { echo "[devbox] ERROR: $*" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || die "Run as root (sudo -i first)"
+
+# ── Devbox user ───────────────────────────────────────────────────────────────
+
+info "Setting up $DEVBOX_USER user..."
+if ! id "$DEVBOX_USER" &>/dev/null; then
+  useradd -m -s /bin/bash -d "$DEVBOX_HOME" "$DEVBOX_USER"
+fi
+
+if [[ ! -f /etc/sudoers.d/$DEVBOX_USER ]]; then
+  echo "$DEVBOX_USER ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$DEVBOX_USER"
+  chmod 440 "/etc/sudoers.d/$DEVBOX_USER"
+fi
+
+mkdir -p "$DEVBOX_HOME/.ssh"
+if [[ -f /root/.ssh/authorized_keys ]]; then
+  cp /root/.ssh/authorized_keys "$DEVBOX_HOME/.ssh/authorized_keys"
+  chmod 600 "$DEVBOX_HOME/.ssh/authorized_keys"
+fi
+chmod 700 "$DEVBOX_HOME/.ssh"
 
 # ── Symlinks ──────────────────────────────────────────────────────────────────
 
@@ -31,27 +53,38 @@ symlink() {
   info "  $dst -> $src"
 }
 
-symlink "$DEVBOX_DIR/AGENTS.md"              "$HOME/CLAUDE.md"
-symlink "$DEVBOX_DIR/AGENTS.md"              "$HOME/.claude/CLAUDE.md"
-symlink "$DEVBOX_DIR/home/bash_aliases"      "$HOME/.bash_aliases"
-symlink "$DEVBOX_DIR/home/tool-versions"     "$HOME/.tool-versions"
-symlink "$DEVBOX_DIR/claude/settings.json"   "$HOME/.claude/settings.json"
-symlink "$DEVBOX_DIR/skills"                 "$HOME/.agents/skills"
-symlink "$DEVBOX_DIR/skills"                 "$HOME/.claude/skills"
-[[ -d "$DEVBOX_DIR/rules" ]] && symlink "$DEVBOX_DIR/rules" "$HOME/.claude/rules"
+symlink "$DEVBOX_DIR/AGENTS.md"              "$DEVBOX_HOME/CLAUDE.md"
+symlink "$DEVBOX_DIR/AGENTS.md"              "$DEVBOX_HOME/.claude/CLAUDE.md"
+symlink "$DEVBOX_DIR/home/bash_aliases"      "$DEVBOX_HOME/.bash_aliases"
+symlink "$DEVBOX_DIR/home/tool-versions"     "$DEVBOX_HOME/.tool-versions"
+symlink "$DEVBOX_DIR/claude/settings.json"   "$DEVBOX_HOME/.claude/settings.json"
+symlink "$DEVBOX_DIR/skills"                 "$DEVBOX_HOME/.agents/skills"
+symlink "$DEVBOX_DIR/skills"                 "$DEVBOX_HOME/.claude/skills"
+[[ -d "$DEVBOX_DIR/rules" ]] && symlink "$DEVBOX_DIR/rules" "$DEVBOX_HOME/.claude/rules"
 
 # ── Directory structure ───────────────────────────────────────────────────────
 
 info "Creating directories..."
-mkdir -p "$HOME/repos" "$HOME/tasks" "$HOME/devbox/scripts"
+mkdir -p "$DEVBOX_HOME"
 mkdir -p "$DEVBOX_DIR/.secrets" "$DEVBOX_DIR/.caddy/sites.d" "$DEVBOX_DIR/.state/env" "$DEVBOX_DIR/.state/cwd"
 chmod 700 "$DEVBOX_DIR/.secrets"
 
 # ── .bashrc hook ─────────────────────────────────────────────────────────────
 
-if ! grep -q 'bash_aliases' "$HOME/.bashrc" 2>/dev/null; then
+if ! grep -q 'bash_aliases' "$DEVBOX_HOME/.bashrc" 2>/dev/null; then
   info "Adding bash_aliases source to .bashrc..."
-  echo '[[ -f ~/.bash_aliases ]] && source ~/.bash_aliases' >> "$HOME/.bashrc"
+  echo '[[ -f ~/.bash_aliases ]] && source ~/.bash_aliases' >> "$DEVBOX_HOME/.bashrc"
+fi
+
+if ! grep -q 'tmux new-session' "$DEVBOX_HOME/.bashrc" 2>/dev/null; then
+  info "Adding tmux auto-attach to .bashrc..."
+  cat >> "$DEVBOX_HOME/.bashrc" <<'EOF'
+
+# Auto-attach to tmux on SSH login
+if [[ -n "$SSH_CONNECTION" && -z "$TMUX" ]]; then
+    exec tmux new-session -A -s main
+fi
+EOF
 fi
 
 # ── System packages ───────────────────────────────────────────────────────────
@@ -65,6 +98,16 @@ apt-get install -y -qq \
   mosh tmux htop
 
 # ── asdf ─────────────────────────────────────────────────────────────────────
+# Shared data dir so both root (for this script) and the devbox user see the
+# same runtimes without installing twice.
+
+export ASDF_DATA_DIR=/opt/asdf
+groupadd -f asdf
+usermod -aG asdf root
+usermod -aG asdf "$DEVBOX_USER"
+mkdir -p "$ASDF_DATA_DIR"
+chown root:asdf "$ASDF_DATA_DIR"
+chmod 2775 "$ASDF_DATA_DIR"
 
 if ! command -v asdf &>/dev/null; then
   info "Installing asdf ${ASDF_VERSION}..."
@@ -82,16 +125,16 @@ while IFS=' ' read -r name version; do
   [[ -z "$name" || "$name" == \#* ]] && continue
   install_asdf_plugin "$name"
   asdf install "$name" "$version"
-done < "$HOME/.tool-versions"
+done < "$DEVBOX_DIR/home/tool-versions"
 
 asdf reshim
-export PATH="$HOME/.asdf/shims:$PATH"
+export PATH="$ASDF_DATA_DIR/shims:$PATH"
 
 # ── uv (Python tooling) ───────────────────────────────────────────────────────
 
-if ! command -v uv &>/dev/null; then
-  info "Installing uv..."
-  curl -LsSf https://astral.sh/uv/install.sh | sh
+if ! su - "$DEVBOX_USER" -c "command -v uv" &>/dev/null; then
+  info "Installing uv for $DEVBOX_USER..."
+  su - "$DEVBOX_USER" -c "curl -LsSf https://astral.sh/uv/install.sh | sh"
 fi
 
 # ── doctl (DigitalOcean CLI) ──────────────────────────────────────────────────
@@ -121,7 +164,7 @@ if ! caddy list-modules 2>/dev/null | grep -q 'dns.providers.cloudflare'; then
   if [[ ! -f /usr/local/go/bin/go ]]; then
     curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -xz -C /usr/local
   fi
-  export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
+  export PATH="/usr/local/go/bin:/root/go/bin:$PATH"
 
   info "Installing xcaddy..."
   go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
@@ -185,10 +228,17 @@ fi
 
 # ── Composer global packages ──────────────────────────────────────────────────
 
-info "Installing Composer global packages..."
-export COMPOSER_ALLOW_SUPERUSER=1
-export COMPOSER_HOME="$HOME/.composer"
-composer global require laravel/installer laravel/forge-cli --no-interaction -q
+info "Installing Composer global packages for $DEVBOX_USER..."
+su - "$DEVBOX_USER" -c "
+  export ASDF_DATA_DIR=/opt/asdf
+  export PATH=\"/opt/asdf/shims:\$PATH\"
+  export COMPOSER_HOME=\"$DEVBOX_HOME/.composer\"
+  composer global require laravel/installer laravel/forge-cli --no-interaction -q
+"
+
+# ── Fix ownership ─────────────────────────────────────────────────────────────
+
+chown -R "$DEVBOX_USER:$DEVBOX_USER" "$DEVBOX_HOME"
 
 # ── Devbox systemd template ───────────────────────────────────────────────────
 
@@ -198,6 +248,6 @@ systemctl daemon-reload
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 
-info "Done. Reload your shell and authenticate GitHub CLI:"
-info "  source ~/.bashrc"
+info "Done. See docs/ssh.md for SSH client config, then log in as $DEVBOX_USER:"
+info "  ssh devbox"
 info "  gh auth login"

@@ -1,3 +1,6 @@
+# Repos (code lives here, not tracked)
+repos/
+
 # Runtime data (gitignored but lives in this repo)
 .secrets/
 .caddy/

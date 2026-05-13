@@ -1,6 +1,10 @@
 # Scripts directory
 export PATH="$HOME/devbox/scripts:$PATH"
 
+# asdf (shared install dir — both root and devbox user use /opt/asdf)
+export ASDF_DATA_DIR=/opt/asdf
+export PATH="$ASDF_DATA_DIR/shims:$PATH"
+
 # Claude Code in devbox context
 alias dev='cd ~/devbox && claude'
 alias yolo='cd ~/devbox && claude --dangerously-skip-permissions'
