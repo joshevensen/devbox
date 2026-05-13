@@ -56,37 +56,27 @@ Quick codebase scan to estimate size and touch points?
 If yes: do a read-only scan, summarize findings, note dependencies and risks.
 If no: estimate size from context only.
 
-### 5. Size
+### 5. Metadata
 
-Recommend with a short reason:
-```
-Recommended size: medium — {reason}
-(s) small  (m) medium  (l) large
-```
-
-### 6. Priority
+Derive a recommendation for each field from the problem statement and codebase scan (if done). Mark each recommended option with ✓. Display all four together and collect one response:
 
 ```
-Recommended priority: medium — {reason}
-(h) high  (m) medium  (l) low
+METADATA — (y) accept all recommendations
+
+  Size:      (S) small    (M) medium ✓  (L) large       {reason}
+  Priority:  (H) high     (N) medium ✓  (W) low         {reason}
+  Type:      (F) feature ✓ (B) bug  (C) chore  (D) docs  (R) refactor   {reason}
+  Title:     (U) use "{suggested title}" ✓  (O) provide my own
+
+Enter (y) to accept all, or type letters to override (e.g. "l h f o"):
 ```
 
-### 7. Type
+Parse the response (input is case-insensitive):
+- `(y)`: apply all recommendations.
+- Any other input: each letter overrides its field; fields not mentioned keep their recommendation.
+- If the response includes `O`: ask for the custom title before proceeding.
 
-```
-Recommended type: feature — {reason}
-(f) feature  (b) bug  (c) chore  (d) docs  (r) refactor
-```
-
-### 8. Title
-
-Suggest a short action-oriented title:
-```
-Suggested title: {title}
-(u) use this  (o) provide my own
-```
-
-### 9. Queue
+### 6. Queue
 
 ```
 Add to queue?
@@ -96,7 +86,7 @@ Add to queue?
 ```
 If `(m)`: list existing groups by number and name, ask which one. Default to end of that group's queue.
 
-### 10. Create
+### 7. Create
 
 Write the issue body:
 ```markdown
@@ -119,7 +109,7 @@ gh issue create --repo {owner}/{repo} \
 
 If queued: add to the appropriate queue issue body.
 
-### 11. Confirm
+### 8. Confirm
 
 ```
 Task #{number} created. Run /task-plan {number} when ready.
