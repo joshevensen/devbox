@@ -26,15 +26,35 @@ Extract the PR number from the URL.
 
 ### 2. Wait for Copilot review
 
-Poll every 15 seconds for up to 3 minutes:
+First, do an immediate check:
 ```bash
 gh api repos/{owner}/{repo}/pulls/{pr}/reviews \
-  --jq '.[] | select(.user.login == "copilot-pull-request-reviewer") | .state'
+  --jq '.[] | select(.user.login == "copilot-pull-request-reviewer[bot]") | .state'
 ```
 
-If a Copilot review appears: proceed with Copilot comments first.
+If a Copilot review is already present: proceed with Copilot comments first.
 
-If no Copilot review after 3 minutes, or if no Copilot reviewer exists on the repo: skip Copilot review entirely and proceed with human comments only. Do not block.
+If no review yet, ask the user:
+```
+No Copilot review yet.
+(w) wait up to 3 min  (s) skip
+```
+
+If `(s)`: skip Copilot review entirely and proceed with human comments only.
+
+If `(w)`: poll every 15 seconds for up to 3 minutes, exiting as soon as a review appears:
+```bash
+for i in $(seq 1 12); do
+  STATE=$(gh api repos/{owner}/{repo}/pulls/{pr}/reviews \
+    --jq '.[] | select(.user.login == "copilot-pull-request-reviewer[bot]") | .state')
+  [ -n "$STATE" ] && break
+  sleep 15
+done
+```
+
+If a Copilot review appears during the loop: proceed with Copilot comments first.
+
+If the loop completes with no review: skip Copilot review entirely and proceed with human comments only. Do not block.
 
 ### 3. Fetch threads
 
