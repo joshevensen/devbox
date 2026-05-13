@@ -22,10 +22,10 @@ Work through these in order. Show the user what you are doing at each step. If a
 **Normalize the input first.** Replace any backslashes with forward slashes. Then check if the input matches the GitHub shorthand pattern `owner/repo` (no protocol, no `.git`, exactly one `/`). If it does, expand it to a full SSH URL:
 
 ```
-git@github.com:owner/repo.git
+https://github.com/owner/repo.git
 ```
 
-Tell the user when you expand a shorthand (e.g. "Expanding `joshevensen/mythicfox` → `git@github.com:joshevensen/mythicfox.git`").
+Tell the user when you expand a shorthand (e.g. "Expanding `joshevensen/mythicfox` → `https://github.com/joshevensen/mythicfox.git`").
 
 If `<name>` was not supplied, extract it from the (possibly expanded) URL:
 ```bash
