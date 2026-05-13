@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPOS_DIR="$HOME/repos"
+DEVBOX_DIR="$HOME/devbox"
+DOMAIN="joshevensen.com"
+
+usage() {
+    echo "Usage: repo-init <git-url> [<project>]" >&2
+    exit 1
+}
+[[ $# -lt 1 ]] && usage
+
+GIT_URL="$1"
+PROJECT="${2:-}"
+
+if [[ -z "$PROJECT" ]]; then
+    PROJECT=$(basename "$GIT_URL" .git)
+fi
+
+name_re='^[a-z][a-z0-9-]*$'
+[[ "$PROJECT" =~ $name_re ]] || { echo "Error: project name '$PROJECT' must match ^[a-z][a-z0-9-]*$ — pass an explicit name as the second argument" >&2; exit 1; }
+
+PROJECT_DIR="$REPOS_DIR/$PROJECT"
+BARE_DIR="$PROJECT_DIR/.bare"
+
+[[ ! -d "$BARE_DIR" ]] || { echo "Error: $BARE_DIR already exists." >&2; exit 1; }
+
+mkdir -p "$PROJECT_DIR"
+
+echo "Cloning bare repo from $GIT_URL..."
+git clone --bare "$GIT_URL" "$BARE_DIR"
+
+# .git redirect so standard git commands work from project dir
+echo "gitdir: ./.bare" > "$PROJECT_DIR/.git"
+
+# Bare clones don't set up remote tracking refspec by default — fix that
+git -C "$BARE_DIR" config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+git -C "$BARE_DIR" fetch origin --quiet
+echo "  Fetched remote branches"
+
+# Create empty secrets file if it doesn't exist
+SECRETS_FILE="$DEVBOX_DIR/.secrets/$PROJECT.env"
+if [[ ! -f "$SECRETS_FILE" ]]; then
+    touch "$SECRETS_FILE"
+    chmod 600 "$SECRETS_FILE"
+    echo "  Created secrets file: $SECRETS_FILE"
+fi
+
+# ── DNS: create wildcard A record for branch preview URLs ────────────────────
+CF_SECRETS="$DEVBOX_DIR/.secrets/cloudflare.env"
+if [[ -f "$CF_SECRETS" ]]; then
+    CF_TOKEN=$(grep -m1 '^CLOUDFLARE_API_TOKEN=' "$CF_SECRETS" | cut -d= -f2- || true)
+    if [[ -n "$CF_TOKEN" ]]; then
+        ZONE_ID=$(curl -sf "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" \
+            -H "Authorization: Bearer $CF_TOKEN" | \
+            python3 -c "import sys,json; r=json.load(sys.stdin)['result']; print(r[0]['id'] if r else '')" 2>/dev/null || true)
+        if [[ -n "$ZONE_ID" ]]; then
+            SERVER_IP=$(curl -sf https://api.ipify.org 2>/dev/null || true)
+            if [[ -n "$SERVER_IP" ]]; then
+                RECORD_NAME="*.$PROJECT.$DOMAIN"
+                EXISTING=$(curl -sf "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$RECORD_NAME" \
+                    -H "Authorization: Bearer $CF_TOKEN" | \
+                    python3 -c "import sys,json; r=json.load(sys.stdin)['result']; print(r[0]['id'] if r else '')" 2>/dev/null || true)
+                if [[ -z "$EXISTING" ]]; then
+                    curl -sf -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
+                        -H "Authorization: Bearer $CF_TOKEN" \
+                        -H "Content-Type: application/json" \
+                        -d "{\"type\":\"A\",\"name\":\"$RECORD_NAME\",\"content\":\"$SERVER_IP\",\"ttl\":1,\"proxied\":false}" > /dev/null
+                    echo "  DNS record created: $RECORD_NAME → $SERVER_IP"
+                else
+                    echo "  DNS record already exists: $RECORD_NAME"
+                fi
+            else
+                echo "  Warning: could not detect server IP — add DNS record for *.$PROJECT.$DOMAIN manually" >&2
+            fi
+        else
+            echo "  Warning: could not look up Cloudflare zone for $DOMAIN — add DNS record for *.$PROJECT.$DOMAIN manually" >&2
+        fi
+    fi
+else
+    echo "  Warning: no Cloudflare secrets found — add DNS record for *.$PROJECT.$DOMAIN manually" >&2
+fi
+
+echo ""
+echo "  Project:  $PROJECT"
+echo "  Bare:     $BARE_DIR"
+echo "  Secrets:  $SECRETS_FILE"
+echo ""
+echo "  Next steps:"
+echo "    1. pgnewdb $PROJECT                  # create Postgres role + primary DB"
+echo "    2. Edit $SECRETS_FILE                # add DB_USER, DB_PASS, etc."
+echo "    3. repo-up $PROJECT <branch>         # spin up a branch env"
+echo ""

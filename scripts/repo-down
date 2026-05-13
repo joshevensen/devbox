@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEVBOX_DIR="/root/devbox"
-REPOS_DIR="/root/repos"
+DEVBOX_DIR="$HOME/devbox"
+REPOS_DIR="$HOME/repos"
 
 usage() {
-    echo "Usage: project-down <project> <branch> [--force]" >&2
+    echo "Usage: repo-down <project> <branch> [--force]" >&2
     echo "  --force  skip DB drop confirmation" >&2
     exit 1
 }
@@ -31,15 +31,30 @@ else
     echo "  Unit was not running"
 fi
 
-# 2. Remove Caddy snippet + reload
+# 2. Remove Caddy snippets + reload
 CADDY_FILE="$DEVBOX_DIR/.caddy/sites.d/$INSTANCE.caddy"
+CADDY_CHANGED=false
 if [[ -f "$CADDY_FILE" ]]; then
     rm -f "$CADDY_FILE"
+    CADDY_CHANGED=true
+fi
+
+# Also remove canonical <project>.<domain> snippet when tearing down main/master
+if [[ "$BRANCH" == "main" || "$BRANCH" == "master" ]]; then
+    CANONICAL_CADDY="$DEVBOX_DIR/.caddy/sites.d/$PROJECT.caddy"
+    if [[ -f "$CANONICAL_CADDY" ]]; then
+        rm -f "$CANONICAL_CADDY"
+        CADDY_CHANGED=true
+        echo "  Removed canonical snippet: $PROJECT.caddy"
+    fi
+fi
+
+if $CADDY_CHANGED; then
     if systemctl is-active --quiet caddy 2>/dev/null; then
         systemctl reload caddy
         echo "  Caddy reloaded"
     else
-        echo "  Caddy snippet removed (Caddy not running)"
+        echo "  Caddy snippet(s) removed (Caddy not running)"
     fi
 fi
 

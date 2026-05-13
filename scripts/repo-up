@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEVBOX_DIR="/root/devbox"
-REPOS_DIR="/root/repos"
+DEVBOX_DIR="$HOME/devbox"
+REPOS_DIR="$HOME/repos"
 DOMAIN="joshevensen.com"
 
 usage() {
-    echo "Usage: project-up <project> <branch> [<git-ref>]" >&2
+    echo "Usage: repo-up <project> <branch> [<git-ref>]" >&2
     exit 1
 }
 [[ $# -lt 2 ]] && usage
@@ -21,7 +21,7 @@ name_re='^[a-z][a-z0-9-]*$'
 [[ "$BRANCH"  =~ $name_re ]] || { echo "Error: branch '$BRANCH' must match ^[a-z][a-z0-9-]*$" >&2; exit 1; }
 
 BARE_DIR="$REPOS_DIR/$PROJECT/.bare"
-[[ -d "$BARE_DIR" ]] || { echo "Error: $BARE_DIR not found. Run: project-init <git-url> $PROJECT" >&2; exit 1; }
+[[ -d "$BARE_DIR" ]] || { echo "Error: $BARE_DIR not found. Run: repo-init <git-url> $PROJECT" >&2; exit 1; }
 
 # Read stack from repo config
 REPO_CONFIG="$DEVBOX_DIR/repos/$PROJECT.yaml"
@@ -32,7 +32,12 @@ STACK_SCRIPT="$DEVBOX_DIR/scripts/stacks/$STACK.sh"
 [[ -f "$STACK_SCRIPT" ]] || { echo "Error: stack script not found: $STACK_SCRIPT" >&2; exit 1; }
 
 ENV_FILE="$DEVBOX_DIR/.state/env/$INSTANCE.env"
-[[ ! -f "$ENV_FILE" ]] || { echo "Error: $INSTANCE is already up. Run: project-down $PROJECT $BRANCH" >&2; exit 1; }
+[[ ! -f "$ENV_FILE" ]] || { echo "Error: $INSTANCE is already up. Run: repo-down $PROJECT $BRANCH" >&2; exit 1; }
+
+# Is this the default branch? If so, also manage the canonical <project>.<domain> URL.
+IS_DEFAULT=false
+[[ "$BRANCH" == "main" || "$BRANCH" == "master" ]] && IS_DEFAULT=true
+CANONICAL_CADDY="$DEVBOX_DIR/.caddy/sites.d/$PROJECT.caddy"
 
 # --- Rollback state ---
 RB_WORKTREE=false
@@ -40,6 +45,7 @@ RB_DB=false
 RB_ENV=false
 RB_CWD=false
 RB_CADDY=false
+RB_CANONICAL=false
 RB_SYSTEMD=false
 DB_NAME=""
 PORT=""
@@ -48,11 +54,12 @@ cleanup() {
     local rc=$?
     [[ $rc -eq 0 ]] && return
     echo "" >&2
-    echo "project-up failed (exit $rc) — rolling back..." >&2
-    $RB_SYSTEMD  && systemctl disable --now "devbox@${INSTANCE}.service" 2>/dev/null || true
-    $RB_CADDY    && { rm -f "$DEVBOX_DIR/.caddy/sites.d/$INSTANCE.caddy"; systemctl reload caddy 2>/dev/null || true; }
-    $RB_CWD      && rm -f "$DEVBOX_DIR/.state/cwd/$INSTANCE" || true
-    $RB_ENV      && rm -f "$ENV_FILE" || true
+    echo "repo-up failed (exit $rc) — rolling back..." >&2
+    $RB_SYSTEMD   && systemctl disable --now "devbox@${INSTANCE}.service" 2>/dev/null || true
+    $RB_CANONICAL && { rm -f "$CANONICAL_CADDY"; systemctl reload caddy 2>/dev/null || true; }
+    $RB_CADDY     && { rm -f "$DEVBOX_DIR/.caddy/sites.d/$INSTANCE.caddy"; systemctl reload caddy 2>/dev/null || true; }
+    $RB_CWD       && rm -f "$DEVBOX_DIR/.state/cwd/$INSTANCE" || true
+    $RB_ENV       && rm -f "$ENV_FILE" || true
     if $RB_DB && [[ -n "$DB_NAME" ]]; then
         sudo -u postgres psql -q -c "DROP DATABASE IF EXISTS \"$DB_NAME\";" 2>/dev/null || true
     fi
@@ -60,7 +67,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Starting project-up for $INSTANCE..."
+echo "Starting repo-up for $INSTANCE..."
 
 # 1. Allocate port atomically via flock
 PORTS_FILE="$DEVBOX_DIR/.state/ports.json"
@@ -144,7 +151,7 @@ echo "  Env file: $ENV_FILE"
 ln -sfn "$WORKTREE" "$DEVBOX_DIR/.state/cwd/$INSTANCE"
 RB_CWD=true
 
-# 6. Caddy snippet
+# 6. Caddy snippet for branch URL
 cat > "$DEVBOX_DIR/.caddy/sites.d/$INSTANCE.caddy" <<CADDY
 ${BRANCH}.${PROJECT}.${DOMAIN} {
   tls {
@@ -154,6 +161,20 @@ ${BRANCH}.${PROJECT}.${DOMAIN} {
 }
 CADDY
 RB_CADDY=true
+
+# 6b. Canonical URL for default branch: <project>.<domain>
+if $IS_DEFAULT; then
+    cat > "$CANONICAL_CADDY" <<CADDY
+${PROJECT}.${DOMAIN} {
+  tls {
+    dns cloudflare {env.CF_API_TOKEN}
+  }
+  reverse_proxy 127.0.0.1:${PORT}
+}
+CADDY
+    RB_CANONICAL=true
+    echo "  Canonical snippet: $PROJECT.$DOMAIN"
+fi
 
 if systemctl is-active --quiet caddy 2>/dev/null; then
     systemctl reload caddy
@@ -170,6 +191,9 @@ echo "  Started: devbox@${INSTANCE}.service"
 echo ""
 echo "  ${INSTANCE} is up"
 echo "  URL:  https://${BRANCH}.${PROJECT}.${DOMAIN}"
+if $IS_DEFAULT; then
+    echo "  Also: https://${PROJECT}.${DOMAIN}"
+fi
 echo "  Port: $PORT"
 echo "  DB:   $DB_NAME"
 echo ""
@@ -182,7 +206,7 @@ echo ""
 STATUS=$(systemctl is-active "devbox@${INSTANCE}.service" 2>/dev/null || echo "unknown")
 echo "  Service status: $STATUS"
 if [[ "$STATUS" != "active" ]]; then
-    echo "  Warning: service is not active — check logs: project-logs $PROJECT $BRANCH" >&2
+    echo "  Warning: service is not active — check logs: repo-logs $PROJECT $BRANCH" >&2
 fi
-echo "  For live logs: project-logs $PROJECT $BRANCH"
+echo "  For live logs: repo-logs $PROJECT $BRANCH"
 echo ""

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEVBOX_DIR="/root/devbox"
+DEVBOX_DIR="$HOME/devbox"
 ENV_DIR="$DEVBOX_DIR/.state/env"
 
 shopt -s nullglob
