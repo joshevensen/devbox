@@ -63,16 +63,16 @@ Derive a recommendation for each field from the problem statement and codebase s
 ```
 METADATA — (y) accept all recommendations
 
-  Size:      (S) small    (M) medium    (L) large       {reason}
-  Priority:  (H) high     (N) normal    (W) low         {reason}
-  Type:      (F) feature  (B) bug  (C) chore  (D) docs  (R) refactor   {reason}
-  Title:     (U) use "{suggested title}"   (O) provide my own
+  Size:      (S) small    (M) medium ✓  (L) large       {reason}
+  Priority:  (H) high     (N) medium ✓  (W) low         {reason}
+  Type:      (F) feature ✓ (B) bug  (C) chore  (D) docs  (R) refactor   {reason}
+  Title:     (U) use "{suggested title}" ✓  (O) provide my own
 
-Enter (y) to accept all, or type letters to override (e.g. "L H f O"):
+Enter (y) to accept all, or type letters to override (e.g. "l h f o"):
 ```
 
-Parse the response:
-- `(y)` or blank: apply all recommendations.
+Parse the response (input is case-insensitive):
+- `(y)`: apply all recommendations.
 - Any other input: each letter overrides its field; fields not mentioned keep their recommendation.
 - If the response includes `O`: ask for the custom title before proceeding.
 
