@@ -37,10 +37,10 @@ If either exists, stop and tell the user.
 ### 3. Clone the bare repo
 
 ```bash
-project-init <git-url> [<name>]
+repo-init <git-url> [<name>]
 ```
 
-If `project-init` is not available, do it manually:
+If `repo-init` is not available, do it manually:
 ```bash
 mkdir -p ~/repos/<name>
 git clone --bare <git-url> ~/repos/<name>/.bare

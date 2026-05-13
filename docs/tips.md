@@ -69,12 +69,12 @@ These scripts live in `~/devbox/scripts/` (on `PATH` automatically).
 
 | Command | What it does |
 |---|---|
-| `project-init <git-url> [name]` | Clone a repo as a bare repo and create its secrets file under `.secrets/`. Run once per project. |
-| `project-up <project> <branch>` | Spin up a full branch environment: worktree, Postgres DB, env file, Caddy snippet, systemd unit. |
-| `project-up <project> <branch> <git-ref>` | Same, but check out a specific commit or tag instead of the branch tip. |
-| `project-down <project> <branch>` | Tear down an environment: stop service, remove Caddy snippet, drop DB (with confirmation), remove worktree. |
-| `project-down <project> <branch> --force` | Same, but skip the DB drop confirmation. |
-| `project-logs <project> <branch>` | Tail the service logs via `journalctl` (last 50 lines + follow). |
+| `repo-init <git-url> [name]` | Clone a repo as a bare repo, create its secrets file, and add the DNS wildcard record. Called by `/repo-add`. |
+| `repo-up <project> <branch>` | Spin up a full branch environment: worktree, Postgres DB, env file, Caddy snippet, systemd unit. |
+| `repo-up <project> <branch> <git-ref>` | Same, but check out a specific commit or tag instead of the branch tip. |
+| `repo-down <project> <branch>` | Tear down an environment: stop service, remove Caddy snippet, drop DB (with confirmation), remove worktree. |
+| `repo-down <project> <branch> --force` | Same, but skip the DB drop confirmation. |
+| `repo-logs <project> <branch>` | Tail the service logs via `journalctl` (last 50 lines + follow). |
 | `devls` | List all active environments with project, branch, URL, port, and service status. |
 
 ---

@@ -1,30 +1,18 @@
-# project-* — branch environment tooling
+# repo-* — branch environment tooling
 
-These scripts manage the lifecycle of per-branch dev environments on this server. Each environment is a combination of: git worktree + Postgres DB + systemd unit + Caddy snippet. All scripts live in `/scripts/`.
+These scripts manage the lifecycle of per-branch dev environments on this server. Each environment is a combination of: git worktree + Postgres DB + systemd unit + Caddy snippet. All scripts live in `~/devbox/scripts/`.
+
+To register a new repo (clone, stack config, Postgres setup, secrets), use the `/repo-add` skill in Claude Code — not these scripts directly.
 
 ## Commands
 
-### `project-init <git-url> [<project>]`
-
-One-time setup for a new project. Clones the repo as a bare repo and creates an empty secrets file.
-
-```bash
-project-init git@github.com:you/fibermade.git
-project-init git@github.com:you/fibermade.git fibermade   # explicit name
-```
-
-After this:
-1. Run `/repo-add` in Claude Code to register the project and set its stack.
-2. Run `pgnewdb fibermade` to create the shared Postgres role and primary DB.
-3. Edit `~/devbox/.secrets/fibermade.env` to add `DB_USER`, `DB_PASS`, and any other project-wide env vars. This file is appended verbatim to every branch env file.
-
-### `project-up <project> <branch> [<git-ref>]`
+### `repo-up <project> <branch> [<git-ref>]`
 
 Spins up a branch environment end-to-end.
 
 ```bash
-project-up fibermade task-001
-project-up fibermade task-001 origin/feature/task-001   # explicit git ref
+repo-up fibermade task-001
+repo-up fibermade task-001 origin/feature/task-001   # explicit git ref
 ```
 
 Steps it performs:
@@ -39,13 +27,13 @@ Steps it performs:
 
 If any step fails, rollback runs in reverse order.
 
-### `project-down <project> <branch> [--force]`
+### `repo-down <project> <branch> [--force]`
 
 Tears down a branch environment. Safe to re-run.
 
 ```bash
-project-down fibermade task-001           # prompts before dropping DB
-project-down fibermade task-001 --force   # skips DB drop confirmation
+repo-down fibermade task-001           # prompts before dropping DB
+repo-down fibermade task-001 --force   # skips DB drop confirmation
 ```
 
 Steps: stop/disable unit → remove Caddy snippet + reload → remove env file and cwd symlink → drop DB → remove worktree → free port in ports.json.
@@ -60,12 +48,12 @@ Lists all active environments with their URLs, ports, and systemd status.
 devls
 ```
 
-### `project-logs <project> <branch>`
+### `repo-logs <project> <branch>`
 
 Tails the journal for a branch env (last 50 lines + follow).
 
 ```bash
-project-logs fibermade task-001
+repo-logs fibermade task-001
 ```
 
 Equivalent to: `journalctl -u devbox@fibermade-task-001.service -n 50 -f`
@@ -86,9 +74,9 @@ State lives in `~/devbox/.state/ports.json`:
 }
 ```
 
-`devup` atomically reads `next_port`, assigns it to the new instance, and increments. `devdown` removes the instance from `allocations` but never decrements `next_port`. Range 40000–49999.
+`repo-up` atomically reads `next_port`, assigns it to the new instance, and increments. `repo-down` removes the instance from `allocations` but never decrements `next_port`. Range 40000–49999.
 
-Locking: `flock` on `ports.json.lock`. Fine for single-user box; concurrent `devup` calls on different terminals would queue on the lock.
+Locking: `flock` on `ports.json.lock`. Fine for single-user box; concurrent `repo-up` calls on different terminals would queue on the lock.
 
 ---
 
@@ -123,7 +111,7 @@ If `devup` dies partway and rollback also fails:
 5. **Worktree:** `git -C ~/repos/<project>/.bare worktree remove --force ../<branch>`
 6. **ports.json:** manually edit to remove the instance from `allocations`.
 
-Then re-run `devup` fresh.
+Then re-run `repo-up` fresh.
 
 ---
 
