@@ -5,10 +5,10 @@ Registers a new repo with devbox end-to-end: clones it as a bare repo, writes th
 ## Usage
 
 ```
-/repo-add <git-url> [<name>]
+/repo-add <git-url-or-shorthand> [<name>]
 ```
 
-- `<git-url>` — SSH or HTTPS git remote (required)
+- `<git-url-or-shorthand>` — SSH URL, HTTPS URL, or GitHub shorthand `owner/repo` (required)
 - `<name>` — override the name derived from the URL (optional)
 
 ---
@@ -17,9 +17,17 @@ Registers a new repo with devbox end-to-end: clones it as a bare repo, writes th
 
 Work through these in order. Show the user what you are doing at each step. If a step fails, stop and explain the error clearly before proceeding.
 
-### 1. Derive the repo name
+### 1. Expand shorthand and derive the repo name
 
-If `<name>` was not supplied, extract it from the URL:
+**Normalize the input first.** Replace any backslashes with forward slashes. Then check if the input matches the GitHub shorthand pattern `owner/repo` (no protocol, no `.git`, exactly one `/`). If it does, expand it to a full SSH URL:
+
+```
+git@github.com:owner/repo.git
+```
+
+Tell the user when you expand a shorthand (e.g. "Expanding `joshevensen/mythicfox` → `git@github.com:joshevensen/mythicfox.git`").
+
+If `<name>` was not supplied, extract it from the (possibly expanded) URL:
 ```bash
 basename "<git-url>" .git
 ```
@@ -29,7 +37,7 @@ The name must match `^[a-z][a-z0-9-]*$`. If it doesn't (e.g. contains uppercase 
 
 ```bash
 ls ~/devbox/repos/<name>.yaml 2>/dev/null && echo exists
-ls ~/repos/<name> 2>/dev/null && echo exists
+ls ~/repos/<name>/.bare 2>/dev/null && echo exists
 ```
 
 If either exists, stop and tell the user.
@@ -117,6 +125,8 @@ Show the user the secrets file contents (mask the password to the first 6 charac
 
 ### 9. Summary
 
+`repo-init` prints whether it created, found existing, or failed the DNS record. Reflect that status in the summary.
+
 ```
 Repo <name> is registered.
 
@@ -125,6 +135,9 @@ Done automatically:
   ✓ Stack: <stack> → ~/devbox/repos/<name>.yaml
   ✓ Postgres role + primary DB created: <name>
   ✓ Secrets written to ~/devbox/.secrets/<name>.env
+  ✓ DNS wildcard created: *.<name>.joshevensen.com → <ip>   # if created
+  ⚠ DNS wildcard already existed: *.<name>.joshevensen.com  # if pre-existing
+  ⚠ DNS record not created: <reason>                         # if it failed
 
 What to do next:
   • Add any additional secrets (API keys, etc.) to ~/devbox/.secrets/<name>.env
@@ -132,4 +145,4 @@ What to do next:
   • When ready: devup <name> <branch>
 ```
 
-Only include manual steps that actually apply.
+Only include the DNS line and manual steps that actually apply.
