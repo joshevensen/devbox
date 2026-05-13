@@ -1,6 +1,6 @@
 # repo-add
 
-Registers a new repo with devbox end-to-end: clones it as a bare repo, writes the stack config to `~/devbox/repos/<name>.yaml`, creates the Postgres role + primary DB, and populates the secrets file. Stops before spinning up any branch environment. The repo itself is left untouched — no devbox artifacts are committed.
+Registers a new repo with devbox end-to-end: clones it as a bare repo, writes the stack config to `~/devbox/repos/<name>.yaml`, creates the Postgres role + primary DB, populates the secrets file, and spins up the `main` branch so `<name>.joshevensen.com` is immediately live. The repo itself is left untouched — no devbox artifacts are committed.
 
 ## Usage
 
@@ -123,12 +123,22 @@ chmod 600 ~/devbox/.secrets/<name>.env
 
 Show the user the secrets file contents (mask the password to the first 6 characters followed by `***`).
 
-### 9. Summary
+### 9. Spin up the main branch
+
+```bash
+repo-up <name> main
+```
+
+This handles worktree creation, port allocation, per-branch DB, env file, branch Caddy snippet (`main.<name>.joshevensen.com`), and the canonical snippet (`<name>.joshevensen.com`). It also enables the systemd unit so it survives reboots.
+
+If `repo-up` fails, stop and show the error. Do not proceed to the summary.
+
+### 10. Summary
 
 `repo-init` prints whether it created, found existing, or failed the DNS record. Reflect that status in the summary.
 
 ```
-Repo <name> is registered.
+Repo <name> is registered and live.
 
 Done automatically:
   ✓ Bare repo cloned to ~/repos/<name>/.bare
@@ -138,11 +148,13 @@ Done automatically:
   ✓ DNS wildcard created: *.<name>.joshevensen.com → <ip>   # if created
   ⚠ DNS wildcard already existed: *.<name>.joshevensen.com  # if pre-existing
   ⚠ DNS record not created: <reason>                         # if it failed
+  ✓ main branch is up → https://main.<name>.joshevensen.com
+  ✓ Canonical URL live → https://<name>.joshevensen.com
 
 What to do next:
   • Add any additional secrets (API keys, etc.) to ~/devbox/.secrets/<name>.env
   • <any stack-specific manual steps, e.g. SECRET_KEY_BASE for Phoenix>
-  • When ready: devup <name> <branch>
+  • For other branches: repo-up <name> <branch>
 ```
 
 Only include the DNS line and manual steps that actually apply.
