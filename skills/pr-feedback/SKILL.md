@@ -45,8 +45,11 @@ If `(s)`: skip Copilot review entirely and proceed with human comments only.
 If `(w)`: poll every 15 seconds for up to 3 minutes, exiting as soon as a review appears:
 ```bash
 for _ in {1..12}; do
-  STATE=$(gh api repos/{owner}/{repo}/pulls/{pr}/reviews \
-    --jq '.[] | select(.user.login == "copilot-pull-request-reviewer[bot]") | .state')
+  if ! STATE=$(gh api repos/{owner}/{repo}/pulls/{pr}/reviews \
+    --jq '.[] | select(.user.login == "copilot-pull-request-reviewer[bot]") | .state' 2>/dev/null); then
+    echo "API error — skipping Copilot wait."
+    break
+  fi
   [ -n "$STATE" ] && break
   sleep 15
 done
